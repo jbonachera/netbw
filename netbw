@@ -1,0 +1,66 @@
+#!/bin/bash
+
+function _netbw_getstats(){
+  cat /sys/class/net/$1/statistics/${2}_${NETBW_UNIT:-bytes}
+}
+
+function _netbw_get_percent_bar(){
+  i=0
+  current=$1
+  max=$2
+  current_p=$(( $current *10 / $max))
+
+  BAR='['
+  while [ $i -lt $current_p ]; do
+    BAR="${BAR}#"
+    i=$(( i + 1))
+  done
+  while [ $i -le 10 ]; do
+    BAR="${BAR}_"
+    i=$(( i + 1))
+  done
+  BAR="${BAR}]"
+  echo $BAR
+}
+
+function _netbw_once(){
+  iface=$1
+  speed=$(cat /sys/class/net/${iface}/speed) 2>/dev/null 
+  if [ -z "${speed}" ]; then
+    speed=1000
+  fi
+  speed=$(( $speed * 100000 ))
+  R2=$(_netbw_getstats $1 rx)
+  T2=$(_netbw_getstats $1 tx)
+  TBPS=$(expr $T2 - ${tx[$iface]})
+  RBPS=$(expr $R2 - ${rx[$iface]})
+
+  T_BAR=$(_netbw_get_percent_bar $TBPS $speed)
+  R_BAR=$(_netbw_get_percent_bar $RBPS $speed)
+
+  IEC_TBPS=$(numfmt --to=iec $TBPS)
+  IEC_RBPS=$(numfmt --to=iec $RBPS)
+  rx[$iface]=$R2
+  tx[$iface]=$T2
+  echo "$1: tx: ${IEC_TBPS}${NETBW_UNIT:-bytes} - rx: ${IEC_RBPS}${NETBW_UNIT:-bytes}"
+  echo "$1: tx: ${T_BAR} - rx: ${R_BAR} "
+}
+
+function netbw(){
+  if [ -z "$1" ]; then
+    echo "Usage: $0 <iface>"
+  else
+    iface=$1
+    typeset -A rx
+    typeset -A tx
+    rx[$iface]=$(_netbw_getstats $1 rx)
+    tx[$iface]=$(_netbw_getstats $1 tx)
+    while [ /bin/true ]; do
+      _netbw_once $1
+      sleep ${NETBW_FREQ:-1}
+      tput cuu1
+      tput cuu1
+      tput ed
+    done
+  fi
+}
